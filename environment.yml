@@ -1,0 +1,30 @@
+name: kynera
+
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.11
+
+  # --- Core data handling ---
+  - numpy>=1.24
+  - pandas>=2.0
+  - xarray>=2023.6
+  - netcdf4>=1.6          # NetCDF4/HDF5 backend for xarray
+  - scipy>=1.10           # fallback NetCDF3 support
+
+  # --- CDS download ---
+  - cdsapi>=0.6
+
+  # --- Geospatial / visualization ---
+  - matplotlib>=3.7
+  - cartopy>=0.22
+
+  # --- Testing ---
+  - pytest>=7.4
+  - pytest-cov>=4.1
+
+  # --- Notebook examples ---
+  - jupyter
+  - ipykernel
