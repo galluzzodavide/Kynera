@@ -1,38 +1,26 @@
 # Kynera
 
-**Kynera** is a Python library for downloading, processing, and validating ERA5 reanalysis data from the [Copernicus Climate Data Store (CDS)](https://cds.climate.copernicus.eu/).
+**Kynera** is a Python library for downloading and processing ERA5 reanalysis data from the [Copernicus Climate Data Store (CDS)](https://cds.climate.copernicus.eu/).
 
-Kynera is designed for geospatial analysis workflows that require ERA5 as a ground-truth reference — for instance, validating weather forecasting models against reanalysis data. It provides a clean, function-based API built on top of `xarray`, `pandas`, and `cdsapi`, with native support for the **new CDS Beta format** (ZIP archive containing separate NetCDF files for instant and accumulated variables).
+Kynera builds on the ideas of [era5cli](https://github.com/eWaterCycle/era5cli) and extends them with a pure Python API, native support for the new CDS Beta format, automatic unit conversion, derived meteorological variables, and georeferenced map visualisation — features that are not available in era5cli.
 
-> Inspired by [era5cli](https://github.com/eWaterCycle/era5cli). Kynera focuses on post-download processing and in-situ validation rather than CLI-based retrieval.
-
-Developed as a project for the course **Geospatial Processing 2025/2026** — Politecnico di Milano.
+> Developed as a project for the course **Geospatial Processing 2025/2026** — Politecnico di Milano.
 
 ---
 
-## Table of Contents
+## Improvements over era5cli
 
-- [Features](#features)
-- [Repository Structure](#repository-structure)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Functions](#functions)
-- [Testing](#testing)
-- [Data](#data)
-- [Contributing](#contributing)
-- [License](#license)
-
----
-
-## Features
-
-- **Download** ERA5 data from CDS with a single function call — handles both legacy `.nc` and the new ZIP format automatically
-- **Load** ERA5 datasets from `.nc` files or `.zip` archives, merging instant and accumulated variables into a single `xarray.Dataset`
-- **Extract** ERA5 values at in-situ station coordinates via nearest-neighbour lookup
-- **Convert** raw CDS units to human-readable values (K → °C, Pa → hPa, m → mm)
-- **Compute** derived meteorological variables: wind speed, wind direction, relative humidity
-- **Validate** ERA5 against in-situ observations with per-station error statistics (bias, MAE, RMSE, correlation)
-- **Plot** 2D spatial maps of any ERA5 variable with Cartopy
+| Feature | era5cli | Kynera |
+|---|---|---|
+| Interface | Command-line only | Pure Python API |
+| New CDS Beta ZIP format | Partial support (open issue) | Full native support |
+| Multi-year split download | `--splitmonths` flag | `split_by_year=True` parameter |
+| Dry-run mode | `--dryrun` flag | `dry_run=True` parameter |
+| Load data into memory | ✗ | `load_era5()` → `xarray.Dataset` |
+| Unit conversion | ✗ | `convert_units()` K→°C, Pa→hPa, m→mm |
+| Derived variables | ✗ | `compute_derived()` wind speed, RH |
+| Variable catalogue | CLI text output only | Python dict, filterable by category |
+| Map visualisation | ✗ | `plot_field()` with Cartopy |
 
 ---
 
@@ -49,12 +37,11 @@ Kynera/
 ├── EXAMPLES/
 │   ├── example.ipynb      ← end-to-end demonstration notebook
 │   └── DATA/              ← place your ERA5 .zip file here
-│       └── (download instructions below)
 │
 └── TESTS/
     ├── test_kynera.py     ← unit tests
     └── DATA_TEST/
-        └── era5_adriatico_sample.zip  ← test data (download link below)
+        └── era5_adriatico_sample.zip  ← test data (see Data section)
 ```
 
 ---
@@ -75,7 +62,7 @@ conda env create --file environment.yml
 conda activate kynera
 ```
 
-### 3. Verify the installation
+### 3. Verify
 
 ```bash
 python -c "import kynera; print(kynera.__version__)"
@@ -88,180 +75,198 @@ python -c "import kynera; print(kynera.__version__)"
 ```python
 import kynera
 
-# 1. Load an ERA5 dataset (ZIP or NetCDF)
-ds = kynera.load_era5("era5_data.zip")
+# 1. Browse available variables
+kynera.list_variables()
+kynera.list_variables(category='accumulated')
 
-# 2. Define stations and extract ERA5 values
-import pandas as pd
-stations = pd.DataFrame({
-    "station_id":   ["S001",     "S002"],
-    "station_name": ["Trieste",  "Ancona"],
-    "lat":          [45.65,      43.60],
-    "lon":          [13.76,      13.50],
-})
-df = kynera.extract_at_stations(ds, stations)
-
-# 3. Convert raw units
-df = kynera.convert_units(df)
-
-# 4. Compute derived variables (wind speed, RH, ...)
-df = kynera.compute_derived(df)
-
-# 5. Validate against observations
-stats = kynera.validate_vs_observations(
-    df_era5       = df,
-    df_obs        = my_observations_df,
-    variable_era5 = "t2m_celsius",
-    variable_obs  = "temp_obs",
+# 2. Preview a download request without submitting it
+kynera.download_era5(
+    variables=['2m_temperature', 'total_precipitation'],
+    years=[2023, 2024],
+    months=['10', '11'],
+    days='all',
+    times=['00:00', '06:00', '12:00', '18:00'],
+    area=[46.5, 12.0, 39.0, 20.0],   # [N, W, S, E] — Adriatic Sea
+    dry_run=True,
 )
-print(stats)
 
-# 6. Plot a spatial map
-fig = kynera.plot_field(ds, variable="t2m", time_index=0)
+# 3. Download — one file per year, automatically
+paths = kynera.download_era5(
+    variables=['2m_temperature', 'total_precipitation',
+               '10m_u_component_of_wind', '10m_v_component_of_wind',
+               '2m_dewpoint_temperature'],
+    years=[2023, 2024],
+    months='10',
+    days=['25', '26', '27'],
+    times=['00:00', '06:00', '12:00', '18:00'],
+    area=[46.5, 12.0, 39.0, 20.0],
+    output_dir='data/',
+    cds_key='your-api-key',
+)
+
+# 4. Load (handles ZIP and plain .nc automatically)
+ds = kynera.load_era5('data/era5_2024.zip')
+
+# 5. Convert raw CDS units to human-readable values
+ds = kynera.convert_units(ds)
+# t2m → t2m_c [°C],  msl → msl_hpa [hPa],  tp → tp_mm [mm]
+
+# 6. Add derived meteorological variables
+ds = kynera.compute_derived(ds)
+# adds: wind_speed_10m [m/s], wind_dir_10m [°], rh_2m [%]
+
+# 7. Plot a georeferenced map
+fig = kynera.plot_field(ds, 't2m_c', time_index=0, output_path='t2m.png')
+fig = kynera.plot_field(ds, 'wind_speed_10m', cmap='viridis')
 ```
 
-See `EXAMPLES/example.ipynb` for the full workflow including download, visualizations and error charts.
+See `EXAMPLES/example.ipynb` for the full workflow with visualisations.
 
 ---
 
 ## Functions
 
-### `download_era5()`
-Download ERA5 reanalysis data from the Copernicus CDS. Skips the download if the output file already exists. Handles the new CDS Beta format which returns a ZIP archive.
+### `list_variables(category=None)`
+
+Lists all ERA5 variables in the Kynera catalogue with short names, long names, raw CDS units, and converted units. Optionally filter by category: `'surface'`, `'accumulated'`, `'wave'`, or `'vertical'`.
 
 ```python
-kynera.download_era5(
-    variables = ['2m_temperature', 'total_precipitation'],
-    year      = '2025',
-    months    = '10',
-    days      = ['25', '26', '27'],
-    times     = ['00:00', '06:00', '12:00', '18:00'],
-    area      = [46.5, 12.0, 39.0, 20.0],  # [N, W, S, E]
-    output_path = 'era5_data.zip',
-    cds_key   = 'your-api-key',
+kynera.list_variables()                   # all 28 variables
+kynera.list_variables(category='wave')    # wave parameters only
+```
+
+Returns a Python dictionary `{short_name: (long_name, raw_unit, converted_unit)}`, unlike the plain text output of `era5cli info`.
+
+---
+
+### `download_era5(...)`
+
+Downloads ERA5 reanalysis data from CDS. Key improvements over era5cli:
+
+- **Multi-year split**: pass `years=[2020, 2021, 2022]` and get one file per year automatically, avoiding CDS "Request Too Large" errors — no need to run multiple CLI commands.
+- **Dry-run**: `dry_run=True` prints the exact CDS request without submitting it.
+- **Skip existing**: files already on disk are skipped unless `overwrite=True`.
+- **`days='all'`**: shortcut for all days in the selected months.
+
+```python
+paths = kynera.download_era5(
+    variables=['2m_temperature', 'total_precipitation'],
+    years=[2022, 2023, 2024],   # split into 3 files automatically
+    months=['06', '07', '08'],
+    days='all',
+    times=['00:00', '06:00', '12:00', '18:00'],
+    area=[46.5, 12.0, 39.0, 20.0],
+    output_dir='data/',
+    split_by_year=True,         # default
+    dry_run=False,
+    overwrite=False,
 )
+# → ['data/era5_2022.zip', 'data/era5_2023.zip', 'data/era5_2024.zip']
 ```
 
-Requires a free CDS account — register at [cds.climate.copernicus.eu](https://cds.climate.copernicus.eu).
+Requires a free CDS account at [cds.climate.copernicus.eu](https://cds.climate.copernicus.eu). Store credentials in `~/.cdsapirc` or pass them via `cds_key`.
 
 ---
 
-### `load_era5()`
-Load an ERA5 dataset from a `.nc` file or a `.zip` archive. Automatically detects the format and merges the `instant` and `accum` NetCDF files produced by the new CDS Beta into a single `xarray.Dataset`.
+### `load_era5(path, extract_dir=None)`
+
+Loads an ERA5 dataset into an `xarray.Dataset`. Handles both plain `.nc` files and the new CDS Beta ZIP format, where the server returns a ZIP archive containing two separate NetCDF files — one for instantaneous variables (e.g. `t2m`, `msl`) and one for accumulated variables (e.g. `tp`). These are detected and merged automatically.
 
 ```python
-ds = kynera.load_era5("era5_data.zip")
-```
-
----
-
-### `extract_at_stations()`
-Extract ERA5 values at the coordinates of a list of in-situ stations using nearest-neighbour lookup on the ERA5 grid. Returns a long-format `pandas.DataFrame` with one row per (station × timestep).
-
-```python
-df = kynera.extract_at_stations(ds, stations)
-# stations: DataFrame with columns 'lat', 'lon' (+ optional 'station_id', 'station_name')
+ds = kynera.load_era5('data/era5_2024.zip')   # ZIP or .nc, both work
+print(ds)
 ```
 
 ---
 
-### `convert_units()`
-Convert ERA5 variables from raw CDS units to human-readable values. Adds new columns alongside the original raw ones.
+### `convert_units(ds)`
 
-| Variable | Raw unit | Converted column | Converted unit |
-|----------|----------|-----------------|----------------|
-| `t2m`    | K        | `t2m_celsius`   | °C             |
-| `d2m`    | K        | `d2m_celsius`   | °C             |
-| `msl`    | Pa       | `mslp_hpa`      | hPa            |
-| `tp`     | m        | `tp_mm`         | mm             |
+Converts raw CDS units to standard meteorological units, adding new variables alongside the originals in the `xarray.Dataset`.
+
+| Raw variable | Raw unit | Converted variable | Converted unit |
+|---|---|---|---|
+| `t2m`, `d2m`, `sst`, `mx2t`, `mn2t` | K | `*_c` | °C |
+| `msl`, `sp` | Pa | `*_hpa` | hPa |
+| `tp`, `lsp`, `cp`, `sf` | m | `*_mm` | mm |
 
 ```python
-df = kynera.convert_units(df)
+ds = kynera.convert_units(ds)
+print(ds['t2m_c'])    # 2m temperature in °C
+print(ds['tp_mm'])    # total precipitation in mm
+print(ds['msl_hpa'])  # sea level pressure in hPa
 ```
 
 ---
 
-### `compute_derived()`
-Compute additional meteorological variables from ERA5 base fields.
+### `compute_derived(ds)`
 
-| Derived variable  | Formula | Unit |
-|-------------------|---------|------|
-| `wind_speed_10m`  | `sqrt(u10² + v10²)` | m/s |
-| `wind_dir_10m`    | `arctan2(-u10, -v10)` meteorological convention | degrees |
-| `rh_2m`           | Magnus formula from `t2m` and `d2m` | % |
+Computes derived meteorological variables from ERA5 base fields, adding them to the dataset with proper units and `long_name` attributes. All spatial and temporal dimensions are preserved. Requires `convert_units()` to have been applied first (needs `t2m_c` and `d2m_c` for relative humidity).
+
+| Derived variable | Formula | Unit |
+|---|---|---|
+| `wind_speed_10m` | `sqrt(u10² + v10²)` | m/s |
+| `wind_dir_10m` | `arctan2(-u10, -v10)` meteorological convention | degrees |
+| `rh_2m` | Magnus formula using `t2m_c` and `d2m_c` | % |
 
 ```python
-df = kynera.compute_derived(df)
+ds = kynera.compute_derived(ds)
+print(ds['wind_speed_10m'])
+print(ds['wind_dir_10m'])
+print(ds['rh_2m'])
 ```
-
-Requires `convert_units()` to have been applied first (needs `t2m_celsius`, `d2m_celsius`).
 
 ---
 
-### `validate_vs_observations()`
-Validate ERA5 reanalysis against in-situ observational data. Matches records on `(station_id, valid_time)` and computes per-station error metrics.
+### `plot_field(ds, variable, time_index=0, ...)`
+
+Plots a georeferenced 2D map of any ERA5 variable at a selected timestep, using Cartopy with coastlines, country borders, and gridlines. Variable name and units are read automatically from the Dataset attributes set by `convert_units()` and `compute_derived()`.
 
 ```python
-stats = kynera.validate_vs_observations(
-    df_era5       = df,
-    df_obs        = df_observations,
-    variable_era5 = "t2m_celsius",
-    variable_obs  = "temp_obs",
-)
+fig = kynera.plot_field(ds, 't2m_c',         time_index=0, cmap='RdYlBu_r')
+fig = kynera.plot_field(ds, 'tp_mm',          time_index=2, cmap='Blues')
+fig = kynera.plot_field(ds, 'wind_speed_10m', cmap='viridis', output_path='wind.png')
+fig = kynera.plot_field(ds, 'rh_2m',          title='Relative Humidity — Oct 2024')
 ```
-
-**Output columns:**
-
-| Metric | Description |
-|--------|-------------|
-| `bias` | mean(ERA5 − obs) — systematic offset |
-| `mae`  | mean absolute error |
-| `rmse` | root mean squared error |
-| `r`    | Pearson correlation coefficient |
-| `n`    | number of matched (station, time) pairs |
 
 ---
 
-### `plot_field()`
-Plot a 2D georeferenced map of any ERA5 variable at a given timestep using Cartopy and Matplotlib.
+## Variable Catalogue
 
-```python
-fig = kynera.plot_field(
-    ds          = ds,
-    variable    = "t2m",
-    time_index  = 0,
-    cmap        = "RdYlBu_r",
-    output_path = "t2m_map.png",   # optional — saves to file
-)
-```
+Kynera includes a built-in catalogue of 28 ERA5 variables organised in four categories.
+
+**Surface — instantaneous** (18 variables):
+`t2m`, `d2m`, `u10`, `v10`, `msl`, `sp`, `sst`, `tcc`, `lcc`, `mcc`, `hcc`, `blh`, `cape`, `cin`, `tcwv`, `i10fg`, `mx2t`, `mn2t`
+
+**Surface — accumulated** (7 variables):
+`tp`, `lsp`, `cp`, `sf`, `ssrd`, `sshf`, `slhf`
+
+**Vertical integrals** (1 variable):
+`viwvd`
+
+**Wave** (4 variables):
+`swh`, `pp1d`, `mwd`, `hmax`
+
+Use `kynera.list_variables()` to see the full catalogue with units at runtime.
 
 ---
 
 ## Testing
 
-Test data is required. Download the sample file and place it in `TESTS/DATA_TEST/`:
+Download the sample file and place it in `TESTS/DATA_TEST/`:
 
 📥 **[Download era5_adriatico_sample.zip](#)** ← replace with your Google Drive link
 
-Then run the full test suite from the repository root:
+The sample covers the Adriatic Sea area `[46.5°N, 12.0°E, 39.0°N, 20.0°E]` for 3 days in October 2025 with variables `t2m`, `msl`, and `tp`.
+
+Run the full test suite from the repository root:
 
 ```bash
 # Run all tests
 python -m pytest TESTS/test_kynera.py -v
 
-# Run with coverage report
+# With coverage report
 python -m pytest TESTS/test_kynera.py -v --cov=kynera --cov-report=term-missing
 ```
-
-Tests are organised in 5 classes, one per function:
-
-| Class | Tests |
-|-------|-------|
-| `TestLoadEra5` | ZIP detection, variable presence, time dimensions |
-| `TestExtractAtStations` | Column names, coordinates, NaN checks |
-| `TestConvertUnits` | Physical plausibility, exact conversion values |
-| `TestComputeDerived` | Wind speed (3-4-5 triangle), RH=100% at saturation |
-| `TestValidateVsObservations` | Bias correctness, RMSE sorting, empty overlap handling |
 
 ---
 
@@ -269,23 +274,22 @@ Tests are organised in 5 classes, one per function:
 
 Kynera works with **ERA5 Single Levels** data from the Copernicus CDS.
 
-To download data you need a free CDS account:
+To access data you need a free account:
+
 1. Register at [cds.climate.copernicus.eu](https://cds.climate.copernicus.eu)
 2. Retrieve your API key from your profile page
-3. Pass it to `download_era5()` via the `cds_key` parameter, or save it in `~/.cdsapirc`:
+3. Store credentials in `~/.cdsapirc`:
 
 ```ini
 url: https://cds.climate.copernicus.eu/api
 key: your-api-key-here
 ```
 
-The sample file used for tests (`era5_adriatico_sample.zip`) covers the Adriatic Sea area `[46.5°N, 12.0°E, 39.0°N, 20.0°E]` for 3 days in October 2025, with variables `t2m`, `msl`, and `tp`.
+Or pass the key directly via the `cds_key` parameter in `download_era5()`.
 
 ---
 
 ## Contributing
-
-Contributions are welcome. To contribute:
 
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feat/your-feature`
@@ -293,6 +297,7 @@ Contributions are welcome. To contribute:
 4. Push and open a Pull Request
 
 Please make sure all tests pass before submitting:
+
 ```bash
 python -m pytest TESTS/test_kynera.py -v
 ```
@@ -301,12 +306,13 @@ python -m pytest TESTS/test_kynera.py -v
 
 ## License
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
 ## Acknowledgements
 
-- ERA5 data provided by the [Copernicus Climate Change Service](https://climate.copernicus.eu/)
-- Download interface inspired by [era5cli](https://github.com/eWaterCycle/era5cli) (eWaterCycle, Netherlands eScience Center)
+- ERA5 data provided by the [Copernicus Climate Change Service](https://climate.copernicus.eu/), ECMWF
+- Inspired by [era5cli](https://github.com/eWaterCycle/era5cli) — eWaterCycle, Netherlands eScience Center
+- Hersbach et al. (2020): *The ERA5 global reanalysis*. Q J R Meteorol Soc. [doi:10.1002/qj.3803](https://doi.org/10.1002/qj.3803)
 - Course: Geospatial Processing 2025/2026 — Politecnico di Milano
