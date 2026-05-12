@@ -254,9 +254,9 @@ Use `kynera.list_variables()` to see the full catalogue with units at runtime.
 
 Download the sample file and place it in `TESTS/DATA_TEST/`:
 
-📥 **[Download era5_adriatico_sample.zip](#)** ← replace with your Google Drive link
+📥 **[Download era5_sample_adriatic.zip](https://drive.google.com/file/d/1BjwdfWEYY7n6liVnjQCfrc6835HGA0ha/view?usp=drive_link)** 
 
-The sample covers the Adriatic Sea area `[46.5°N, 12.0°E, 39.0°N, 20.0°E]` for 3 days in October 2025 with variables `t2m`, `msl`, and `tp`.
+The sample covers the Adriatic Sea area `[46.5°N, 12.0°E, 39.0°N, 20.0°E]` for 3 days in December 2025 with variables `v10`, `u10`, `msl` and `i10fg`.
 
 Run the full test suite from the repository root:
 

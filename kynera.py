@@ -13,7 +13,7 @@ Kynera improves on era5cli (https://github.com/eWaterCycle/era5cli) by providing
   - Georeferenced 2D map visualisation with Cartopy
   - A built-in variable catalogue with units and descriptions
 
-Authors: [your name]
+Authors: Davide Galluzzo
 Course:  Geospatial Processing 2025/2026 — Politecnico di Milano
 """
 
@@ -28,6 +28,7 @@ import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
+__version__ = "0.1.0"
 
 # ==============================================================================
 # VARIABLE CATALOGUE
@@ -195,7 +196,6 @@ def download_era5(
     """
     Download ERA5 data from the Copernicus Climate Data Store.
 
-    Improvements over era5cli:
     - Python API callable from scripts and notebooks (no shell required)
     - Multi-year split: downloads one file per year automatically from a
       single call, avoiding CDS "Request Too Large" errors
@@ -243,28 +243,8 @@ def download_era5(
     list of str
         Paths to the downloaded files (empty list if dry_run=True).
 
-    Examples
-    --------
-    >>> import kynera
-    >>> # Preview without downloading
-    >>> kynera.download_era5(
-    ...     variables=['2m_temperature', 'total_precipitation'],
-    ...     years=[2023, 2024], months=['10', '11'],
-    ...     days='all', times=['00:00', '06:00', '12:00', '18:00'],
-    ...     area=[46.5, 12.0, 39.0, 20.0],
-    ...     dry_run=True
-    ... )
-    >>> # Actual download split by year
-    >>> paths = kynera.download_era5(
-    ...     variables=['2m_temperature', 'total_precipitation'],
-    ...     years=[2023, 2024], months='10',
-    ...     days=['25', '26', '27'],
-    ...     times=['00:00', '06:00', '12:00', '18:00'],
-    ...     area=[46.5, 12.0, 39.0, 20.0],
-    ...     output_dir='data/',
-    ...     cds_key='your-api-key'
-    ... )
     """
+    
     # --- Normalise inputs ---
     if isinstance(years, (int, str)):
         years = [years]
